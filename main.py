@@ -1,57 +1,57 @@
-from fastapi import FastAPI
+# main.py
+from fastapi import FastAPI, Depends, HTTPException
+from sqlalchemy.orm import Session
+from database_setup import engine, SessionLocal
+from database import Base, Material as DBMaterial
+from models import Material, MaterialCreate, MaterialUpdate
 from fastapi.middleware.cors import CORSMiddleware
-from models import Material
-from database import get_db_connection, init_db
-import json
+from typing import List, Optional
 
 app = FastAPI()
+Base.metadata.create_all(bind=engine)
 
-origins = ["*"]  # Frontend uchun CORS ochiq
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"]
+    allow_headers=["*"],
 )
 
-@app.on_event("startup")
-def startup_event():
-    init_db()
+# DB session
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
-@app.get("/materials")
-def get_materials():
-    conn = get_db_connection()
-    materials = conn.execute("SELECT * FROM materials").fetchall()
-    conn.close()
+# ✅ GET /materials?telegram_post_id=...
+@app.get("/materials", response_model=List[Material])
+def get_materials(telegram_post_id: Optional[int] = None, db: Session = Depends(get_db)):
+    if telegram_post_id:
+        return db.query(DBMaterial).filter(DBMaterial.telegram_post_id == telegram_post_id).all()
+    return db.query(DBMaterial).all()
 
-    return [
-        {
-            "id": row["id"],
-            "title": row["title"],
-            "description": row["description"],
-            "categories": json.loads(row["categories"]),
-            "file_url": row["file_url"],
-            "preview_url": row["preview_url"]
-        }
-        for row in materials
-    ]
+@app.post("/materials", response_model=Material)
+def create_material(material: MaterialCreate, db: Session = Depends(get_db)):
+    db_material = DBMaterial(**material.dict())
+    db.add(db_material)
+    db.commit()
+    db.refresh(db_material)
+    return db_material
 
-@app.post("/materials")
-def add_material(material: Material):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO materials (title, description, categories, file_url, preview_url)
-        VALUES (?, ?, ?, ?, ?)
-    """, (
-        material.title,
-        material.description,
-        json.dumps(material.categories),
-        material.file_url,
-        material.preview_url
-    ))
-    conn.commit()
-    conn.close()
-    return {"message": "Material added successfully"}
+@app.patch("/materials/{material_id}", response_model=Material)
+def update_material(material_id: int, updates: MaterialUpdate, db: Session = Depends(get_db)):
+    db_material = db.query(DBMaterial).filter(DBMaterial.id == material_id).first()
+    if not db_material:
+        raise HTTPException(status_code=404, detail="Material not found")
 
+    update_data = updates.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_material, key, value)
+
+    db.commit()
+    db.refresh(db_material)
+    return db_material

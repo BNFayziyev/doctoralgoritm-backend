@@ -1,23 +1,15 @@
-import sqlite3
+# database.py
+from sqlalchemy import Column, Integer, String, Text
+from sqlalchemy.types import JSON
+from database_setup import Base
 
-def get_db_connection():
-    conn = sqlite3.connect("materials.db")
-    conn.row_factory = sqlite3.Row
-    return conn
+class Material(Base):
+    __tablename__ = "materials"
 
-def init_db():
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS materials (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            description TEXT,
-            categories TEXT,
-            file_url TEXT NOT NULL,
-            preview_url TEXT
-        )
-    """)
-    conn.commit()
-    conn.close()
-
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)
+    description = Column(Text)
+    categories = Column(JSON)
+    file_url = Column(String)
+    preview_url = Column(String, nullable=True)
+    telegram_post_id = Column(Integer, nullable=True, index=True)  # ✅ YANGI USTUN
